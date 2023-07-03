@@ -3,8 +3,11 @@ package mr
 import (
 	"fmt"
 	"hash/fnv"
+	"io/ioutil"
 	"log"
 	"net/rpc"
+	"os"
+	"time"
 )
 
 // Map functions return a slice of KeyValue.
@@ -26,19 +29,51 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
 	// Your worker implementation here.
-	// Send an RPC to the coordinator asking for a task.
-	CallAssignTask()
+
+	for {
+		// Send an RPC to the coordinator asking for a task.
+		assignTaskReply := CallAssignTask()
+		switch assignTaskReply.TaskType {
+		case TASK_TYPE_MAP:
+			// Open the file
+			fileName := assignTaskReply.FileName
+			file, err := os.Open(fileName)
+			if err != nil {
+				log.Fatalf("cannot open %v", fileName)
+			}
+			content, err := ioutil.ReadAll(file)
+			if err != nil {
+				log.Fatalf("cannot read %v", fileName)
+			}
+			file.Close()
+
+			// Call Map function
+			mapResult := mapf(fileName, string(content))
+
+			// TODO: process mapResult and store to intermediate files
+		case TASK_TYPE_REDUCE:
+			// TODO: perform Reduce task
+		case TASK_TYPE_IDLE:
+			// Wait 3 seconds before asking again
+			time.Sleep(3 * time.Second)
+		case TASK_TYPE_KILL:
+			// TODO: terminate current worker
+		}
+	}
 }
 
-func CallAssignTask() {
+// Sends an RPC to request a task from the coordinator.
+func CallAssignTask() *AssignTaskReply {
 	args := AssignTaskArgs{}
 	reply := AssignTaskReply{}
 
 	ok := call("Coordinator.AssignTask", &args, &reply)
 	if ok {
 		fmt.Printf("reply.FileName: %v, reply.TaskType: %v\n", reply.FileName, reply.TaskType)
+		return &reply
 	} else {
 		fmt.Printf("call failed!\n")
+		return nil
 	}
 }
 

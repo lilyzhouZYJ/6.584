@@ -1,73 +1,79 @@
 package mr
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/rpc"
 	"os"
 	"sync"
+	"time"
 )
 
 const (
-	TASK_IDLE        = "TASK_IDLE"
-	TASK_IN_PROGRESS = "TASK_IN_PROGRESS"
-	TASK_COMPLETED   = "TASK_COMPLETED"
+	IDLE        = "IDLE"        // waiting to be assigned
+	IN_PROGRESS = "IN_PROGRESS" // already assigned to a worker
+	COMPLETED   = "COMPLETED"   // completed
 
 	TASK_TYPE_MAP    = "TASK_TYPE_MAP"
 	TASK_TYPE_REDUCE = "TASK_TYPE_REDUCE"
+	TASK_TYPE_IDLE   = "TASK_TYPE_IDLE" // informs the worker to wait
+	TASK_TYPE_KILL   = "TASK_TYPE_KILL" // informs the worker to terminate because all tasks are completed
 )
 
 type TaskInfo struct {
-	taskType string // task type: map or reduce
-	status   string // task status
-	file     string // file name
-	worker   int    // -1 if unassigned to any worker
+	taskType  string    // task type
+	status    string    // task status
+	startTime time.Time // task start time (when it was assigned to a worker)
+	fileName  string    // file name
 }
 
 type Coordinator struct {
 	// Your definitions here.
-	mapTasks    []TaskInfo
-	reduceTasks []TaskInfo
-
-	// Lock
-	lock sync.RWMutex
-
-	// TODO: need to track list of workers?
-	// Have all workers ping coordinator upon startup
+	tasks []TaskInfo
+	lock  sync.RWMutex
 }
 
 // Your code here -- RPC handlers for the worker to call.
 
+// Assign a task to a worker machine:
+// (1) If there are idle tasks, assign a task to the worker.
+// (2) If there are in-progress tasks but no idle tasks, tell the worker to wait for future tasks.
+// (3) If all tasks are completed, the worker may terminate.
 func (c *Coordinator) AssignTask(args *AssignTaskArgs, reply *AssignTaskReply) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	// Find unassigned task
-	for i := 0; i < len(c.mapTasks); i++ {
-		if c.mapTasks[i].status == TASK_IDLE {
-			reply.FileName = c.mapTasks[i].file
-			reply.TaskType = TASK_TYPE_MAP
+	// Find unassigned task for worker
+	allCompleted := true
+	for i := 0; i < len(c.tasks); i++ {
+		if c.tasks[i].status == IDLE {
+			// Found unassigned task
+			reply.FileName = c.tasks[i].fileName
+			reply.TaskType = c.tasks[i].taskType
 
-			c.mapTasks[i].status = TASK_IN_PROGRESS
-			c.mapTasks[i].worker = 0 // TODO: how to identify worker
+			c.tasks[i].status = IN_PROGRESS
+			c.tasks[i].startTime = time.Now()
+
+			fmt.Printf("[Coordinator] Assigns task %v (%v) to worker, with file %v and start time %v\n", i, reply.TaskType, reply.FileName, c.tasks[i].startTime)
 			return nil
+		}
+
+		if c.tasks[i].status != COMPLETED {
+			allCompleted = false
 		}
 	}
 
-	for i := 0; i < len(c.reduceTasks); i++ {
-		if c.reduceTasks[i].status == TASK_IDLE {
-			reply.FileName = c.reduceTasks[i].file
-			reply.TaskType = TASK_TYPE_REDUCE
-
-			c.reduceTasks[i].status = TASK_IN_PROGRESS
-			c.reduceTasks[i].worker = 0 // TODO: how to identify worker
-			return nil
-		}
+	if allCompleted == false {
+		// Found uncompleted task: worker cannot terminate yet
+		reply.TaskType = TASK_TYPE_IDLE
+	} else {
+		// All tasks are completed: worker can terminate
+		reply.TaskType = TASK_TYPE_KILL
 	}
 
-	// If we get here, we have no unassigned tasks
-	reply.FileName = ""
+	fmt.Printf("[Coordinator] Assigns task of type %v to worker\n", reply.TaskType)
 	return nil
 }
 
@@ -102,24 +108,17 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
 
 	// Your code here.
-	c.mapTasks = make([]TaskInfo, len(files))
-	for i := 0; i < len(files); i++ {
-		c.mapTasks[i] = TaskInfo{
-			taskType: TASK_TYPE_MAP,
-			status:   TASK_IDLE,
-			file:     files[i],
-			worker:   -1,
-		}
-	}
 
-	c.reduceTasks = make([]TaskInfo, nReduce)
+	// Set up Map tasks
+	c.tasks = make([]TaskInfo, 0)
 	for i := 0; i < len(files); i++ {
-		c.reduceTasks[i] = TaskInfo{
-			taskType: TASK_TYPE_REDUCE,
-			status:   TASK_IDLE,
-			file:     "",
-			worker:   -1,
-		}
+		// For every input file, create a Map task
+		c.tasks = append(c.tasks, TaskInfo{
+			taskType:  TASK_TYPE_MAP,
+			status:    IDLE,
+			fileName:  files[i],
+			startTime: time.Now(),
+		})
 	}
 
 	c.server()
