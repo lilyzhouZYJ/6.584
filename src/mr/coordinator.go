@@ -18,7 +18,7 @@ const (
 	TASK_TYPE_REDUCE = "TASK_TYPE_REDUCE"
 )
 
-type MRTask struct {
+type TaskInfo struct {
 	taskType string // task type: map or reduce
 	status   string // task status
 	file     string // file name
@@ -27,8 +27,8 @@ type MRTask struct {
 
 type Coordinator struct {
 	// Your definitions here.
-	mapTasks    []MRTask
-	reduceTasks []MRTask
+	mapTasks    []TaskInfo
+	reduceTasks []TaskInfo
 
 	// Lock
 	lock sync.RWMutex
@@ -102,9 +102,9 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
 
 	// Your code here.
-	c.mapTasks = make([]MRTask, len(files))
+	c.mapTasks = make([]TaskInfo, len(files))
 	for i := 0; i < len(files); i++ {
-		c.mapTasks[i] = MRTask{
+		c.mapTasks[i] = TaskInfo{
 			taskType: TASK_TYPE_MAP,
 			status:   TASK_IDLE,
 			file:     files[i],
@@ -112,9 +112,9 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		}
 	}
 
-	c.reduceTasks = make([]MRTask, nReduce)
+	c.reduceTasks = make([]TaskInfo, nReduce)
 	for i := 0; i < len(files); i++ {
-		c.reduceTasks[i] = MRTask{
+		c.reduceTasks[i] = TaskInfo{
 			taskType: TASK_TYPE_REDUCE,
 			status:   TASK_IDLE,
 			file:     "",
