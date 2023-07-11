@@ -37,8 +37,9 @@ type TaskInfo struct {
 
 type Coordinator struct {
 	// Your definitions here.
-	tasks []TaskInfo
-	lock  sync.RWMutex
+	tasks      []TaskInfo
+	lock       sync.RWMutex
+	nextTaskId int
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -87,6 +88,24 @@ func (c *Coordinator) AssignTask(args *AssignTaskArgs, reply *AssignTaskReply) e
 	return nil
 }
 
+// Updates task list with incoming filenames from worker; these are all reduce tasks
+func (c *Coordinator) NotifyCompletion(args *NotifyCompletionArgs, reply *NotifyCompletionReply) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	for _, fileName := range args.FileNames {
+		fmt.Printf("[Coordinator] Received filename %v \n", fileName)
+		c.tasks = append(c.tasks, TaskInfo{
+			taskType:  TASK_TYPE_REDUCE,
+			status:    IDLE,
+			taskId:    c.nextTaskId,
+			startTime: time.Now(), // ignore this start time
+			fileName:  fileName,
+		})
+		c.nextTaskId++
+	}
+	return nil
+}
+
 // start a thread that listens for RPCs from worker.go
 func (c *Coordinator) server() {
 	rpc.Register(c)
@@ -121,6 +140,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 
 	// Set up Map tasks
 	c.tasks = make([]TaskInfo, 0)
+	c.nextTaskId = 0
 	for i := 0; i < len(files); i++ {
 		// For every input file, create a Map task
 		c.tasks = append(c.tasks, TaskInfo{
@@ -129,8 +149,9 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 			fileName:  files[i],
 			startTime: time.Now(),
 			nReduce:   nReduce,
-			taskId:    i,
+			taskId:    c.nextTaskId,
 		})
+		c.nextTaskId++
 	}
 
 	c.server()

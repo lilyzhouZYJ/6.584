@@ -53,12 +53,14 @@ func Worker(mapf func(string, string) []KeyValue,
 			// save output to mr-X
 
 			encoderList := make([]*json.Encoder, assignTaskReply.NReduce)
+			fileNameList := make([]string, assignTaskReply.NReduce)
 			for i := 0; i < assignTaskReply.NReduce; i++ {
 				reduceFileName := fmt.Sprintf("mr-%d-%d", assignTaskReply.TaskID, i)
 				reduceFile, err := os.Create(reduceFileName)
 				if err != nil {
 					log.Fatalf("cannot create %v", reduceFileName)
 				}
+				fileNameList[i] = reduceFileName
 				encoderList[i] = json.NewEncoder(reduceFile)
 				defer reduceFile.Close()
 			}
@@ -70,7 +72,7 @@ func Worker(mapf func(string, string) []KeyValue,
 					log.Fatalf("cannot encode %v to file mr-%d-%d", kv, assignTaskReply.TaskID, reduceIndex)
 				}
 			}
-
+			CallNotifyCompletion(assignTaskReply.TaskType, assignTaskReply.TaskID, fileNameList)
 			// TODO: process mapResult and store to intermediate files
 		case TASK_TYPE_REDUCE:
 			// TODO: perform Reduce task
@@ -94,6 +96,27 @@ func CallAssignTask() *AssignTaskReply {
 		return &reply
 	} else {
 		fmt.Printf("call failed!\n")
+		return nil
+	}
+}
+
+// Sends an RPC to notify coordinator a task is complete.
+func CallNotifyCompletion(taskType string,
+	taskID int,
+	fileNames []string) *NotifyCompletionReply {
+	args := NotifyCompletionArgs{
+		TaskType:  taskType,
+		TaskID:    taskID,
+		FileNames: fileNames,
+	}
+	reply := NotifyCompletionReply{}
+
+	ok := call("Coordinator.NotifyCompletion", &args, &reply)
+	if ok {
+		fmt.Printf("Notified completion of task %v\n", taskID)
+		return &reply
+	} else {
+		fmt.Printf("Completion notification failed!\n")
 		return nil
 	}
 }

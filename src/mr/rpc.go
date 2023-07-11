@@ -25,6 +25,15 @@ type AssignTaskReply struct {
 	// reduce specific fields
 }
 
+type NotifyCompletionArgs struct {
+	TaskType  string
+	TaskID    int
+	FileNames []string // filenames of intermediate files
+}
+
+type NotifyCompletionReply struct {
+}
+
 // Cook up a unique-ish UNIX-domain socket name
 // in /var/tmp, for the coordinator.
 // Can't use the current directory since
