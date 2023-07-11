@@ -26,7 +26,13 @@ type TaskInfo struct {
 	taskType  string    // task type
 	status    string    // task status
 	startTime time.Time // task start time (when it was assigned to a worker)
-	fileName  string    // file name
+	taskId    int       // task id ( [0,n-1] are for map, above is reduce)
+	// map specific fields
+	fileName string // file name
+	nReduce  int    // number of reduce tasks
+
+	// reduce specific fields
+
 }
 
 type Coordinator struct {
@@ -49,12 +55,16 @@ func (c *Coordinator) AssignTask(args *AssignTaskArgs, reply *AssignTaskReply) e
 	allCompleted := true
 	for i := 0; i < len(c.tasks); i++ {
 		if c.tasks[i].status == IDLE {
-			// Found unassigned task
+			// Found unassigned task, load info
 			reply.FileName = c.tasks[i].fileName
 			reply.TaskType = c.tasks[i].taskType
-
+			reply.TaskID = c.tasks[i].taskId
 			c.tasks[i].status = IN_PROGRESS
 			c.tasks[i].startTime = time.Now()
+			if reply.TaskType == TASK_TYPE_MAP {
+				reply.NReduce = c.tasks[i].nReduce
+			}
+			// map specific fieldss
 
 			fmt.Printf("[Coordinator] Assigns task %v (%v) to worker, with file %v and start time %v\n", i, reply.TaskType, reply.FileName, c.tasks[i].startTime)
 			return nil
@@ -118,6 +128,8 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 			status:    IDLE,
 			fileName:  files[i],
 			startTime: time.Now(),
+			nReduce:   nReduce,
+			taskId:    i,
 		})
 	}
 

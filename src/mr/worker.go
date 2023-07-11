@@ -1,6 +1,7 @@
 package mr
 
 import (
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"io/ioutil"
@@ -49,6 +50,26 @@ func Worker(mapf func(string, string) []KeyValue,
 
 			// Call Map function
 			mapResult := mapf(fileName, string(content))
+			// save output to mr-X
+
+			encoderList := make([]*json.Encoder, assignTaskReply.NReduce)
+			for i := 0; i < assignTaskReply.NReduce; i++ {
+				reduceFileName := fmt.Sprintf("mr-%d-%d", assignTaskReply.TaskID, i)
+				reduceFile, err := os.Create(reduceFileName)
+				if err != nil {
+					log.Fatalf("cannot create %v", reduceFileName)
+				}
+				encoderList[i] = json.NewEncoder(reduceFile)
+				defer reduceFile.Close()
+			}
+			// iterate through map output and assign to intermediate files
+			for _, kv := range mapResult {
+				reduceIndex := ihash(kv.Key) % assignTaskReply.NReduce
+				err := encoderList[reduceIndex].Encode(&kv)
+				if err != nil {
+					log.Fatalf("cannot encode %v to file mr-%d-%d", kv, assignTaskReply.TaskID, reduceIndex)
+				}
+			}
 
 			// TODO: process mapResult and store to intermediate files
 		case TASK_TYPE_REDUCE:

@@ -19,6 +19,10 @@ type AssignTaskArgs struct {
 type AssignTaskReply struct {
 	FileName string
 	TaskType string
+	TaskID   int
+	// map specific fields
+	NReduce int
+	// reduce specific fields
 }
 
 // Cook up a unique-ish UNIX-domain socket name
