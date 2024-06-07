@@ -15,6 +15,7 @@ const (
 	// Phases
 	MAP_PHASE = "MAP_PHASE"
 	REDUCE_PHASE = "REDUCE_PHASE"
+	DONE_PHASE = "DONE_PHASE"
 
 	// Task states
 	IDLE        = "IDLE"        // waiting to be assigned
@@ -30,7 +31,7 @@ const (
 
 // Defines a task
 type TaskInfo struct {
-	TaskId    int		// task id
+	taskId    int		// task id
 	taskType  string    // task type
 	status    string    // task status
 	startTime time.Time // task start time (when it was assigned to a worker)
@@ -51,7 +52,7 @@ type Coordinator struct {
 }
 
 // Assign task to worker
-func (c *Coordinator) assignTaskInternal(reply *AssignTaskReply) error {
+func (c *Coordinator) assignTaskInternal(args *AssignTaskArgs, reply *AssignTaskReply) error {
 	// Find idle task for worker
 	for i := 0; i < len(c.tasks); i++ {
 		if c.tasks[i].status == IDLE {
@@ -76,27 +77,58 @@ func (c *Coordinator) assignTaskInternal(reply *AssignTaskReply) error {
 	return nil
 }
 
-// Assign a task to a worker machine:
-// (a) If in MAP_PHASE:
-//     1. If there is an idle map task, assign the task to the worker.
-//     2. If there is no idle map task, tell the worker to wait.
-//     3. If all map tasks are completed, set phase to REDUCE_PHASE and initialize reduce tasks, then assign a task to worker.
-// (b) If in REDUCE_PHASE:
-//     1. If there is an idle reduce task, assign the task to the worker.
-//     2. If there is no idle reduce task, tell the worker to wait.
-//     3. If all reduce tasks are completed, tell the worker to terminate.
+// Assign a task to a worker machine
 func (c *Coordinator) AssignTask(args *AssignTaskArgs, reply *AssignTaskReply) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	// (a) If in MAP_PHASE:
-	if c.currentPhase = MAP_PHASE {
-		if c.nMapCompleted < c.nMap {
-			// Assign map task to worker
-			return c.assignTaskInternal(reply)
-		} else if c.nMapCompleted == c.nMap {
-			// All map tasks are completed; enter REDUCE_PHASE
-			c.phase = REDUCE_PHASE
+	switch c.currentPhase {
+	case MAP_PHASE:
+		return c.assignTaskInternal(args, reply)
+	case REDUCE_PHASE:
+		return c.assignTaskInternal(args, reply)
+	case DONE_PHASE:
+		// All tasks are completed; tell worker to terminate
+		reply.TaskType = TASK_TYPE_KILL
+		fmt.Printf("[Coordinator] Notifies worker to terminate\n")
+	}
+
+	return nil
+}
+
+// Mark a task as completed by a worker.
+func (c *Coordinator) CompleteTask(args *CompleteTaskArgs, reply *CompleteTaskReply) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	completedTaskId := args.CompletedTaskId
+	completedTaskType := args.CompletedTaskType
+	fmt.Printf("[Coordinator] Receives a completed task: type=%v, id=%v\n", completedTaskType, completedTaskId)
+
+	// Sanity check
+	if completedTaskType != TASK_TYPE_MAP && completedTaskType != TASK_TYPE_REDUCE {
+		log.Fatalf("[Coordinator] Receives a completed task of type %v", completedTaskType)
+	}
+
+	switch c.currentPhase {
+	case MAP_PHASE:
+		if completedTaskType == TASK_TYPE_REDUCE {
+			// Error
+			log.Fatalf("System is in MAP_PHASE, but received a completed task of type %v", completedTaskType)
+		}
+
+		if c.tasks[completedTaskId].status == COMPLETED {
+			// Disregard current update
+			return nil
+		}
+
+		// Mark map task as completed
+		c.tasks[completedTaskId].status = COMPLETED
+		c.nMapCompleted++
+
+		// Check if we are ready to move into REDUCE_PHASE
+		if c.nMapCompleted == c.nMap {
+			c.currentPhase = REDUCE_PHASE
 
 			// Initialize reduce tasks
 			c.tasks = make([]TaskInfo, 0)
@@ -109,27 +141,33 @@ func (c *Coordinator) AssignTask(args *AssignTaskArgs, reply *AssignTaskReply) e
 					startTime: time.Now(),
 				})
 			}
-			// Assign reduce task to worker
-			return c.assignTaskInternal(reply)
-		} else {
+		} else if c.nMapCompleted > c.nMap {
 			// Error
-			log.fatalf("Incorrect parameters: nMapCompleted=%v, nMap=%v", nMapCompleted, nMap)
+			log.Fatalf("Invalid nMapCompleted value: nMapCompleted=%v, nMap=%v", c.nMapCompleted, c.nMap)
 		}
-	} else if c.currentPhase = REDUCE_PHASE {
-		if c.nReduceCompleted < c.nReduce {
-			// Assign reduce task to worker
-			return c.assignTaskInternal(reply)
-		} else if c.nReduceCompleted == c.nReduce {
-			// All reduce tasks are completed; tell worker to terminate
-			reply.taskType = TASK_TYPE_KILL
-			
-			fmt.Printf("[Coordinator] Assigns task of type %v to worker\n", reply.TaskType)
+	case REDUCE_PHASE:
+		if completedTaskType == TASK_TYPE_MAP {
+			// We are already in REDUCE_PHASE; the completed map task is irrelevant
 			return nil
-		} else {
-			// Error
-			log.fatalf("Incorrect parameters: nReduceCompleted=%v, nReduce=%v", nReduceCompleted, nReduce)
+		}
+
+		if c.tasks[completedTaskId].status == COMPLETED {
+			// Disregard current update
+			return nil
+		}
+
+		// Mark map task as completed
+		c.tasks[completedTaskId].status = COMPLETED
+		c.nReduceCompleted++
+
+		// Check if we are ready to move into DONE_PHASE
+		if c.nReduceCompleted == c.nReduce {
+			c.currentPhase = DONE_PHASE
+			// TODO: when does coordinator exit?
 		}
 	}
+
+	return nil
 }
 
 // start a thread that listens for RPCs from worker.go

@@ -20,9 +20,17 @@ type AssignTaskReply struct {
 	FileName 	string
 	TaskType 	string
 	TaskId		int
-	
+
 	NReduce		int
-	nMap		int
+	NMap		int
+}
+
+type CompleteTaskArgs struct {
+	CompletedTaskId		int
+	CompletedTaskType	string
+}
+
+type CompleteTaskReply struct {
 }
 
 // Cook up a unique-ish UNIX-domain socket name

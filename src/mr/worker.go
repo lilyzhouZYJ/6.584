@@ -8,6 +8,7 @@ import (
 	"net/rpc"
 	"os"
 	"time"
+	"encoding/json"
 )
 
 // Map functions return a slice of KeyValue.
@@ -25,32 +26,78 @@ func ihash(key string) int {
 }
 
 // main/mrworker.go calls this function.
+// Takes the map and reduce functions as arguments.
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	// Your worker implementation here.
-
 	for {
-		// Send an RPC to the coordinator asking for a task.
+		// Send an RPC to the coordinator asking for a task
 		assignTaskReply := CallAssignTask()
+
 		switch assignTaskReply.TaskType {
 		case TASK_TYPE_MAP:
 			// Open the file
 			fileName := assignTaskReply.FileName
 			file, err := os.Open(fileName)
 			if err != nil {
-				log.Fatalf("cannot open %v", fileName)
+				log.Fatalf("Cannot open %v", fileName)
 			}
 			content, err := ioutil.ReadAll(file)
 			if err != nil {
-				log.Fatalf("cannot read %v", fileName)
+				log.Fatalf("Cannot read %v", fileName)
 			}
 			file.Close()
 
-			// Call Map function
+			// Call Map function; returns []KeyValue
 			mapResult := mapf(fileName, string(content))
 
-			// TODO: process mapResult and store to intermediate files
+			// Process mapResult and store to intermediate files
+			/*
+			The map phase should divide the intermediate keys into buckets 
+			for nReduce reduce tasks, where nReduce is the number of reduce 
+			tasks -- the argument that main/mrcoordinator.go passes to 
+			MakeCoordinator(). Each mapper should create nReduce intermediate
+			files for consumption by the reduce tasks.
+			*/
+
+			nReduce := assignTaskReply.NReduce
+			mapResultBuckets := make([][]KeyValue, nReduce)
+
+			for _, kv := range mapResult {
+				// For each KeyValue pair, determine which reduce task it is assigned to (using hash)
+				key := kv.Key
+
+				reduceTaskId := ihash(key) % nReduce
+				mapResultBuckets[reduceTaskId] = append(mapResultBuckets[reduceTaskId], kv)
+			}
+
+			// Store to intermediate files
+			// TODO: need atomic rename
+			mapTaskId := assignTaskReply.TaskId
+			for reduceTaskId, keyValuePairs := range mapResultBuckets {
+				// Create file: mr-x-y, where x is map task id and y is reduce task id
+				fileName := fmt.Sprintf("mr-%v-%v", mapTaskId, reduceTaskId)
+				file, err := os.Create(fileName)
+				if err != nil {
+					log.Fatalf("Create intermediate file %v failed", file)
+				}
+
+				enc := json.NewEncoder(file)
+				for _, kv := range keyValuePairs {
+					err := enc.Encode(&kv)
+					if err != nil {
+						log.Fatalf("Encoding KV %v into intermediate file %v failed", kv, fileName)
+					}
+				}
+			}
+
+			// Notify the coordinator that the task is completed
+			completeTaskReply := CallCompleteTask(assignTaskReply.TaskId, assignTaskReply.TaskType)
+			// TODO: What to do if error?
+			if completeTaskReply != nil {
+				log.Fatalf("Error in CallCompleteTask")
+			}
+
 		case TASK_TYPE_REDUCE:
 			// TODO: perform Reduce task
 		case TASK_TYPE_IDLE:
@@ -70,6 +117,20 @@ func CallAssignTask() *AssignTaskReply {
 	ok := call("Coordinator.AssignTask", &args, &reply)
 	if ok {
 		fmt.Printf("reply.FileName: %v, reply.TaskType: %v\n", reply.FileName, reply.TaskType)
+		return &reply
+	} else {
+		fmt.Printf("call failed!\n")
+		return nil
+	}
+}
+
+// Sends an RPC to notify the coordinator that a task is completed.
+func CallCompleteTask(completedTaskId int, completedTaskType string) *CompleteTaskReply {
+	args := CompleteTaskArgs{CompletedTaskId: completedTaskId, CompletedTaskType: completedTaskType}
+	reply := CompleteTaskReply{}
+
+	ok := call("Coordinator.CompleteTask", &args, &reply)
+	if ok {
 		return &reply
 	} else {
 		fmt.Printf("call failed!\n")
