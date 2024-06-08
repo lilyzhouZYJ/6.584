@@ -189,7 +189,8 @@ func Worker(mapf func(string, string) []KeyValue,
 			// Wait 3 seconds before asking again
 			time.Sleep(3 * time.Second)
 		case TASK_TYPE_KILL:
-			// TODO: terminate current worker
+			// Terminate current worker
+			os.Exit(0)
 		}
 	}
 }
