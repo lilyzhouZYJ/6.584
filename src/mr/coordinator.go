@@ -56,7 +56,7 @@ func (c *Coordinator) assignTaskInternal(args *AssignTaskArgs, reply *AssignTask
 	// Find idle task for worker
 	for i := 0; i < len(c.tasks); i++ {
 		if c.tasks[i].status == IDLE {
-			// Found idle task; respond to worker
+			// Found idle task; assign to worker
 			reply.TaskId = c.tasks[i].taskId
 			reply.FileName = c.tasks[i].fileName
 			reply.TaskType = c.tasks[i].taskType
@@ -68,8 +68,27 @@ func (c *Coordinator) assignTaskInternal(args *AssignTaskArgs, reply *AssignTask
 
 			fmt.Printf("[Coordinator] Assigns task %v (%v) to worker, with file %v and start time %v\n", reply.TaskId, reply.TaskType, reply.FileName, c.tasks[i].startTime)
 			return nil
+		} else if c.tasks[i].status == IN_PROGRESS {
+			// If the task is in progress, check if it has timed out
+			// Timeout is set to 10 seconds according to the lab spec
+			duration := time.Now().Sub(c.tasks[i].startTime)
+			if duration.Seconds() > 10 {
+				// Has timed out; assign to worker
+				reply.TaskId = c.tasks[i].taskId
+				reply.FileName = c.tasks[i].fileName
+				reply.TaskType = c.tasks[i].taskType
+				reply.NReduce = c.nReduce
+				reply.NMap = c.nMap
+
+				c.tasks[i].status = IN_PROGRESS
+				c.tasks[i].startTime = time.Now()
+
+				fmt.Printf("[Coordinator] Assigns task %v (%v) to worker, with file %v and start time %v\n", reply.TaskId, reply.TaskType, reply.FileName, c.tasks[i].startTime)
+				return nil
+			}
 		}
 	}
+	
 	// No idle task was found; tell worker to wait
 	reply.TaskType = TASK_TYPE_IDLE
 

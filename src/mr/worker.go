@@ -95,9 +95,10 @@ func processMapTask(mapf func(string, string) []KeyValue, taskId int, fileName s
 	// Notify the coordinator that the task is completed
 	fmt.Printf("[Worker %v] Calls coordinator to notify the completion of MAP task: taskId=%v\n", os.Getpid(), taskId)
 	completeTaskReply := CallCompleteTask(taskId, TASK_TYPE_MAP)
-	// TODO: What to do if error?
 	if completeTaskReply == nil {
-		log.Fatalf("Error in CallCompleteTask")
+		// Failed to contact coordinator: assume the job is complete and exit
+		fmt.Printf("[Worker %v] Fails to contact coordinator; exits", os.Getpid())
+		os.Exit(0)
 	}
 }
 
@@ -162,9 +163,10 @@ func processReduceTask(reducef func(string, []string) string, taskId int, nMap i
 	// Notify the coordinator that the task is completed
 	fmt.Printf("[Worker %v] Calls coordinator to notify the completion of REDUCE task: taskId=%v\n", os.Getpid(), taskId)
 	completeTaskReply := CallCompleteTask(taskId, TASK_TYPE_REDUCE)
-	// TODO: What to do if error?
 	if completeTaskReply == nil {
-		log.Fatalf("Error in CallCompleteTask")
+		// Failed to contact coordinator: assume the job is complete and exit
+		fmt.Printf("[Worker %v] Fails to contact coordinator; exits", os.Getpid())
+		os.Exit(0)
 	}
 }
 
@@ -179,6 +181,11 @@ func Worker(mapf func(string, string) []KeyValue,
 		// Send an RPC to the coordinator asking for a task
 		fmt.Printf("[Worker %v] Calls coordinator to ask for task\n", os.Getpid())
 		assignTaskReply := CallAssignTask()
+		if assignTaskReply == nil {
+			// Failed to contact coordinator: assume the job is complete and exit
+			fmt.Printf("[Worker %v] Fails to contact coordinator; exits", os.Getpid())
+			os.Exit(0)
+		}
 
 		switch assignTaskReply.TaskType {
 		case TASK_TYPE_MAP:
