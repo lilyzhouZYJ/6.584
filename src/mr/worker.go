@@ -28,7 +28,7 @@ func ihash(key string) int {
 
 // A map task has been received; process it
 func processMapTask(mapf func(string, string) []KeyValue, taskId int, fileName string, nReduce int) {
-	fmt.Printf("[Worker %v] Receives MAP task: taskId=%v, fileName=%v", os.Getpid(), taskId, fileName)
+	fmt.Printf("[Worker %v] Receives MAP task: taskId=%v, fileName=%v\n", os.Getpid(), taskId, fileName)
 
 	// Open the file
 	file, err := os.Open(fileName)
@@ -42,7 +42,7 @@ func processMapTask(mapf func(string, string) []KeyValue, taskId int, fileName s
 	file.Close()
 
 	// Call Map function; returns []KeyValue
-	fmt.Printf("[Worker %v] Calls map function", os.Getpid())
+	fmt.Printf("[Worker %v] Calls map function\n", os.Getpid())
 	mapResult := mapf(fileName, string(content))
 
 	// Process mapResult and store to intermediate files
@@ -72,7 +72,7 @@ func processMapTask(mapf func(string, string) []KeyValue, taskId int, fileName s
 		if err != nil {
 			log.Fatalf("[Worker %v] Create temp intermediate file failed", os.Getpid())
 		}
-		fmt.Printf("[Worker %v] Temp intermediate file created: %v", os.Getpid(), file.Name())
+		fmt.Printf("[Worker %v] Temp intermediate file created: %v\n", os.Getpid(), file.Name())
 
 		// Write to temp file
 		enc := json.NewEncoder(file)
@@ -89,21 +89,21 @@ func processMapTask(mapf func(string, string) []KeyValue, taskId int, fileName s
 		if err != nil {
 			log.Fatalf("[Worker %v] Atomic rename of temp intermediate file to %v failed", os.Getpid(), fileName)
 		}
-		fmt.Printf("[Worker %v] Intermediate file atomically renamed to %v", os.Getpid(), fileName)
+		fmt.Printf("[Worker %v] Intermediate file atomically renamed to %v\n", os.Getpid(), fileName)
 	}
 
 	// Notify the coordinator that the task is completed
-	fmt.Printf("[Worker %v] Calls coordinator to notify the completion of MAP task: taskId=%v", os.Getpid(), taskId)
+	fmt.Printf("[Worker %v] Calls coordinator to notify the completion of MAP task: taskId=%v\n", os.Getpid(), taskId)
 	completeTaskReply := CallCompleteTask(taskId, TASK_TYPE_MAP)
 	// TODO: What to do if error?
-	if completeTaskReply != nil {
+	if completeTaskReply == nil {
 		log.Fatalf("Error in CallCompleteTask")
 	}
 }
 
 // A reduce task has been received; process it
 func processReduceTask(reducef func(string, []string) string, taskId int, nMap int) {
-	fmt.Printf("[Worker %v] Receives REDUCe task: taskId=%v", os.Getpid(), taskId)
+	fmt.Printf("[Worker %v] Receives REDUCe task: taskId=%v\n", os.Getpid(), taskId)
 
 	// Read each KV pair from each intermediate file into list
 	kvList := make([]KeyValue, 0)
@@ -143,7 +143,7 @@ func processReduceTask(reducef func(string, []string) string, taskId int, nMap i
 	if err != nil {
 		log.Fatalf("[Worker %v] Create temp reduce output file failed", os.Getpid())
 	}
-	fmt.Printf("[Worker %v] Temp reduce output file created: %v", os.Getpid(), file.Name())
+	fmt.Printf("[Worker %v] Temp reduce output file created: %v\n", os.Getpid(), file.Name())
 
 	// Feed each (key, [list of values]) into reduce function
 	for k, vList := range shuffledKvList {
@@ -160,10 +160,10 @@ func processReduceTask(reducef func(string, []string) string, taskId int, nMap i
 	}
 
 	// Notify the coordinator that the task is completed
-	fmt.Printf("[Worker %v] Calls coordinator to notify the completion of REDUCE task: taskId=%v", os.Getpid(), taskId)
+	fmt.Printf("[Worker %v] Calls coordinator to notify the completion of REDUCE task: taskId=%v\n", os.Getpid(), taskId)
 	completeTaskReply := CallCompleteTask(taskId, TASK_TYPE_REDUCE)
 	// TODO: What to do if error?
-	if completeTaskReply != nil {
+	if completeTaskReply == nil {
 		log.Fatalf("Error in CallCompleteTask")
 	}
 }
@@ -173,11 +173,11 @@ func processReduceTask(reducef func(string, []string) string, taskId int, nMap i
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	fmt.Printf("[Worker %v] Starting", os.Getpid())
+	fmt.Printf("[Worker %v] Starting\n", os.Getpid())
 
 	for {
 		// Send an RPC to the coordinator asking for a task
-		fmt.Printf("[Worker %v] Calls coordinator to ask for task", os.Getpid())
+		fmt.Printf("[Worker %v] Calls coordinator to ask for task\n", os.Getpid())
 		assignTaskReply := CallAssignTask()
 
 		switch assignTaskReply.TaskType {
@@ -190,6 +190,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			time.Sleep(3 * time.Second)
 		case TASK_TYPE_KILL:
 			// Terminate current worker
+			fmt.Printf("[Worker %v] Terminates upon receipt of TASK_TYPE_KILL\n", os.Getpid())
 			os.Exit(0)
 		}
 	}

@@ -187,11 +187,10 @@ func (c *Coordinator) server() {
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
-	ret := false
+	c.lock.Lock()
+	defer c.lock.Unlock()
 
-	// Your code here.
-
-	return ret
+	return c.currentPhase == DONE_PHASE
 }
 
 // create a Coordinator.
