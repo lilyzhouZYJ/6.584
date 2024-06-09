@@ -88,7 +88,7 @@ func (c *Coordinator) assignTaskInternal(args *AssignTaskArgs, reply *AssignTask
 			}
 		}
 	}
-	
+
 	// No idle task was found; tell worker to wait
 	reply.TaskType = TASK_TYPE_IDLE
 
@@ -182,7 +182,6 @@ func (c *Coordinator) CompleteTask(args *CompleteTaskArgs, reply *CompleteTaskRe
 		// Check if we are ready to move into DONE_PHASE
 		if c.nReduceCompleted == c.nReduce {
 			c.currentPhase = DONE_PHASE
-			// TODO: when does coordinator exit?
 		}
 	}
 
